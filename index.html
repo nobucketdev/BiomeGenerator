@@ -1312,7 +1312,7 @@
         const tooltipDiv = document.getElementById('tooltip');
         const matchedBiomesList = document.getElementById('matchedBiomesList'); // New element
 
-        let currentSeed = parseInt(seedInput.value);
+        let currentSeed; // Will be initialized from URL or default
         let maps = {};
         let foundTiles = [];
         let searchBiomeName = null;
@@ -1427,10 +1427,31 @@
             }
         }
 
-        // Initial generation
-        maps = regenerate(currentSeed);
-        drawBiomeMap(maps.biome);
-        updateInfoText();
+        // Function to update the URL with the current seed
+        function updateUrlWithSeed(seed) {
+            const url = new URL(window.location);
+            url.searchParams.set('seed', seed);
+            window.history.pushState({ seed: seed }, '', url.toString());
+        }
+
+        // Initialize currentSeed from URL, then input, then default
+        document.addEventListener('DOMContentLoaded', () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            const urlSeed = urlParams.get('seed');
+
+            if (urlSeed && !isNaN(parseInt(urlSeed))) {
+                currentSeed = parseInt(urlSeed);
+                seedInput.value = currentSeed; // Update input field with URL seed
+            } else {
+                currentSeed = parseInt(seedInput.value); // Use value from input field
+                updateUrlWithSeed(currentSeed); // Set initial URL seed if not present
+            }
+
+            maps = regenerate(currentSeed);
+            drawBiomeMap(maps.biome);
+            updateInfoText();
+        });
+
 
         // Event Listeners
         regenButton.addEventListener('click', () => {
@@ -1443,6 +1464,7 @@
                 searchBiomeName = null;
                 updateInfoText();
                 clearMatchedBiomesList(); // Clear the list on regenerate
+                updateUrlWithSeed(currentSeed); // Update URL after regeneration
             } else {
                 console.warn("Invalid seed. Please enter an integer.");
             }
