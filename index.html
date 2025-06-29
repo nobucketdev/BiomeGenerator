@@ -1,0 +1,1573 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Biome Visualizer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #1a1a1a;
+            color: #e0e0e0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        .container {
+            background-color: #2a2a2a;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+            width: 100%;
+            max-width: 800px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        canvas {
+            border: 2px solid #555;
+            border-radius: 8px;
+            background-color: #333;
+            image-rendering: pixelated; /* For sharper pixel art if needed */
+            width: 100%; /* Make canvas responsive */
+            max-width: 500px; /* Max width for the map */
+            height: auto;
+        }
+        .ui-section {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin-top: 20px;
+            justify-content: center;
+            width: 100%;
+        }
+        .input-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        input[type="text"] {
+            background-color: #3b3b3b;
+            border: 1px solid #555;
+            border-radius: 5px;
+            padding: 8px 12px;
+            color: #e0e0e0;
+            font-size: 1rem;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        input[type="text"]:focus {
+            border-color: #70a3ff;
+        }
+        button {
+            padding: 10px 15px;
+            border-radius: 5px;
+            border: none;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background-color 0.2s, transform 0.1s;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+        }
+        button:hover {
+            transform: translateY(-1px);
+        }
+        button:active {
+            transform: translateY(0);
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+        }
+        .btn-blue {
+            background-color: #4a90e2;
+        }
+        .btn-blue:hover {
+            background-color: #5a9cec;
+        }
+        .btn-blue:active {
+            background-color: #3a7bd8;
+        }
+        .btn-green {
+            background-color: #5cb85c;
+        }
+        .btn-green:hover {
+            background-color: #6bcc6b;
+        }
+        .btn-green:active {
+            background-color: #4aa44a;
+        }
+        .btn-red {
+            background-color: #d9534f;
+        }
+        .btn-red:hover {
+            background-color: #e06662;
+        }
+        .btn-red:active {
+            background-color: #c0403c;
+        }
+        .info-text {
+            margin-top: 20px;
+            font-size: 0.9rem;
+            color: #bbb;
+            text-align: center;
+            width: 100%;
+        }
+        .tooltip {
+            position: absolute;
+            background-color: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 5px 8px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            pointer-events: none; /* Allows mouse events to pass through */
+            z-index: 1000;
+            white-space: nowrap;
+        }
+        /* New styles for matched biomes list */
+        #matchedBiomesList {
+            margin-top: 10px;
+            max-height: 150px;
+            overflow-y: auto;
+            width: 100%;
+            max-width: 400px;
+            background-color: #3b3b3b;
+            border: 1px solid #555;
+            border-radius: 5px;
+            padding: 10px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            justify-content: center;
+        }
+        #matchedBiomesList button {
+            background-color: #555;
+            padding: 6px 10px;
+            font-size: 0.85rem;
+            border-radius: 4px;
+            transition: background-color 0.2s;
+        }
+        #matchedBiomesList button:hover {
+            background-color: #777;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="text-2xl font-bold mb-4">Biome Visualizer</h1>
+        <canvas id="biomeCanvas"></canvas>
+        <div class="ui-section">
+            <div class="input-group">
+                <label for="seedInput" class="text-white">Seed:</label>
+                <input type="text" id="seedInput" value="12345">
+                <button id="regenButton" class="btn-blue">Regenerate</button>
+            </div>
+            <div class="input-group">
+                <label for="findBiomeInput" class="text-white">Find Biome:</label>
+                <input type="text" id="findBiomeInput" placeholder="e.g., desert">
+                <button id="findBiomeButton" class="btn-green">Find</button>
+                <button id="clearHighlightButton" class="btn-red">Clear Highlight</button>
+            </div>
+        </div>
+        <div id="matchedBiomesList">
+            <!-- Matched biomes will be displayed here -->
+        </div>
+        <div id="infoText" class="info-text"></div>
+        <div id="tooltip" class="tooltip hidden"></div>
+    </div>
+
+    <script>
+        // --- Perlin Noise Functions (Translated from Python) ---
+        function fade(t) {
+            return t * t * t * (t * (t * 6 - 15) + 10);
+        }
+
+        function lerp(a, b, t) {
+            return a + t * (b - a);
+        }
+
+        function grad(hash_val, x, y) {
+            const h = hash_val & 3;
+            const u = (h & 1) === 0 ? x : -x;
+            const v = (h & 2) === 0 ? y : -y;
+            return u + v;
+        }
+
+        function perlin_noise(x, y, perm) {
+            const xi = Math.floor(x) & 255;
+            const yi = Math.floor(y) & 255;
+            const xf = x - Math.floor(x);
+            const yf = y - Math.floor(y);
+            const u = fade(xf);
+            const v = fade(yf);
+
+            const aa = perm[perm[xi] + yi];
+            const ab = perm[perm[xi] + yi + 1];
+            const ba = perm[perm[xi + 1] + yi];
+            const bb = perm[perm[xi + 1] + yi + 1];
+
+            const x1 = lerp(grad(aa, xf, yf), grad(ba, xf - 1, yf), u);
+            const x2 = lerp(grad(ab, xf, yf - 1), grad(bb, xf - 1, yf - 1), u);
+
+            return (lerp(x1, x2, v) + 1) / 2;
+        }
+
+        function octave_noise(x, y, perm, octaves = 4, persistence = 0.5) {
+            let total = 0.0;
+            let frequency = 1.0;
+            let amplitude = 1.0;
+            let max_amplitude = 0.0;
+
+            for (let i = 0; i < octaves; i++) {
+                total += perlin_noise(x * frequency, y * frequency, perm) * amplitude;
+                max_amplitude += amplitude;
+                amplitude *= persistence;
+                frequency *= 2;
+            }
+            return total / max_amplitude;
+        }
+
+        function generate_permutation(seed) {
+            const p = Array.from({ length: 256 }, (_, i) => i);
+            // Simple seeded random number generator for permutation
+            const rng = function(seedValue) {
+                let x = Math.sin(seedValue++) * 10000;
+                return function() {
+                    x = Math.sin(x++) * 10000;
+                    return x - Math.floor(x);
+                };
+            }(seed); // Immediately invoke to create the seeded random function
+
+            for (let i = p.length - 1; i > 0; i--) {
+                const j = Math.floor(rng() * (i + 1));
+                [p[i], p[j]] = [p[j], p[i]];
+            }
+            return p.concat(p);
+        }
+
+        // --- Biome Data (Translated from Python) ---
+        const BIOMES_JSON_DATA = `
+{
+  "biomes": [
+    {
+  "id": 999999,
+  "name": "forbidden_island",
+  "color": [150, 0, 50],
+  "rules": [
+    {
+      "land": "< 0.08"
+    }
+  ],
+  "min_distance_from_land": 30
+    },
+    {
+      "id": 26,
+      "name": "island_of_fog",
+      "color": [10, 200, 90],
+      "rules": [
+        {
+          "temp": "> 0.6"
+        },
+        {
+          "humidity": "> 0.8"
+        },
+        {
+          "height": "< 0.4"
+        }
+      ]
+    },
+    {
+      "id": 39,
+      "name": "volcanic_island",
+      "color": [80, 30, 10],
+      "rules": [
+        {
+          "temp": "> 0.8"
+        },
+        {
+          "humidity": "< 0.28"
+        },
+        {
+          "land": "< 0.23"
+        }
+      ]
+    },
+    {
+      "id": 38,
+      "name": "floating_islands",
+      "color": [200, 220, 255],
+      "rules": [
+        {
+          "height": "> 0.84"
+        },
+        {
+          "temp": "0.3..0.7"
+        },
+        {
+          "humidity": "0.4..0.7"
+        }
+      ],
+      "random_chance": 0.002
+    },
+    {
+      "id": 0,
+      "name": "deep_ocean",
+      "color": [0, 0, 80],
+      "rules": [
+        {
+          "land": "< 0.3"
+        }
+      ],
+      "water": true
+    },
+    {
+      "id": 35,
+      "name": "frozen_ocean",
+      "color": [100, 170, 220],
+      "rules": [
+        {
+          "land": "< 0.56"
+        },
+        {
+          "temp": "< 0.25"
+        }
+      ],
+      "water": true
+    },
+
+    {
+      "id": 41,
+      "name": "lagoon",
+      "color": [80,130,200],
+      "rules": [
+        {
+          "land": "0.5..0.56"
+        }
+      ],
+      "water": true
+    },
+        {
+      "id": 1,
+      "name": "swamp_ocean",
+      "color": [30, 60, 90],
+      "rules": [
+        {
+          "land": "< 0.56"
+        },
+        {
+          "humidity": "> 0.7"
+        }
+      ],
+      "water": true
+    },
+    {
+      "id": 2,
+      "name": "warm_ocean",
+      "color": [0, 100, 200],
+      "rules": [
+        {
+          "land": "< 0.56"
+        },
+        {
+          "temp": "> 0.6"
+        }
+      ],
+      "water": true
+    },
+    {
+      "id": 3,
+      "name": "cold_ocean",
+      "color": [0, 60, 130],
+      "rules": [
+        {
+          "land": "< 0.56"
+        },
+        {
+          "temp": "< 0.4"
+        }
+      ],
+      "water": true
+    },
+    {
+      "id": 4,
+      "name": "ocean",
+      "color": [0, 0, 160],
+      "rules": [
+        {
+          "land": "< 0.56"
+        }
+      ],
+      "water": true
+    },
+    {
+      "id": 27,
+      "name": "frost_desert",
+      "color": [255, 255, 180],
+      "rules": [
+        {
+          "temp": "< 0.28"
+        },
+        {
+          "humidity": "< 0.3"
+        },
+        {
+          "height": "< 0.4"
+        }
+      ]
+    },
+    {
+      "id": 28,
+      "name": "crystal_forest",
+      "color": [160, 100, 160],
+      "rules": [
+        {
+          "temp": "0.52..0.55"
+        },
+        {
+          "humidity": "0.58..0.62"
+        },
+        {
+          "height": "0.48..0.52"
+        }
+      ]
+    },
+    {
+      "id": 29,
+      "name": "foggy_peak",
+      "color": [100, 100, 150],
+      "rules": [
+        {
+          "temp": "< 0.4"
+        },
+        {
+          "humidity": "> 0.75"
+        },
+        {
+          "height": "> 0.75"
+        }
+      ]
+    },
+    {
+      "id": 666,
+      "name": "corrupted_land",
+      "color": [130, 0, 130],
+      "rules": [
+        {
+          "temp": "< 0.02"
+        },
+        {
+          "temp": "> 0.98"
+        },
+        {
+          "humidity": "< 0.02"
+        },
+        {
+          "humidity": "> 0.98"
+        },
+        {
+          "height": "< 0.02"
+        },
+        {
+          "height": "> 0.98"
+        }
+      ],
+      "random_chance": 0.001
+    },
+    {
+      "id": 8,
+      "name": "glacier",
+      "color": [240, 250, 255],
+      "rules": [
+        {
+          "height": "> 0.72"
+        },
+        {
+          "temp": "< 0.35"
+        },
+        {
+          "humidity": "< 0.5"
+        }
+      ]
+    },
+    {
+      "id": 80001,
+      "name": "glacier#blue_ice",
+      "base": "glacier",
+      "color": [180, 220, 255],
+      "rules": [
+        {
+          "temp": "< 0.25"
+        },
+        {
+          "humidity": "< 0.3"
+        },
+        {
+          "height": "> 0.85"
+        }
+      ],
+      "random_chance": 0.05
+    },
+    {
+      "id": 40,
+      "name": "meadow",
+      "color": [150, 200, 120],
+      "rules": [
+        {
+          "height": "0.6..0.8"
+        },
+        {
+          "temp": "0.3..0.5"
+        },
+        {
+          "humidity": "0.5..0.7"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "name": "snowy_mountains",
+      "color": [255, 255, 255],
+      "rules": [
+        {
+          "height": "> 0.7"
+        },
+        {
+          "temp": "< 0.35"
+        }
+      ]
+    },
+    {
+      "id": 30,
+      "name": "red_desert",
+      "color": [180, 50, 20],
+      "rules": [
+        {
+          "temp": "> 0.72"
+        },
+        {
+          "humidity": "< 0.2"
+        }
+      ]
+    },
+        {
+      "id": 13,
+      "name": "badlands",
+      "color": [150, 70, 40],
+      "rules": [
+        {
+          "temp": "> 0.65"
+        },
+        {
+          "humidity": "< 0.3"
+        }
+      ]
+    },
+    {
+      "id": 31,
+      "name": "canyonlands",
+      "color": [160, 80, 30],
+      "rules": [
+        {
+          "height": "0.6..0.8"
+        },
+        {
+          "temp": "> 0.6"
+        },
+        {
+          "humidity": "< 0.35"
+        }
+      ]
+    },
+    {
+      "id": 32,
+      "name": "maple_forest",
+      "color": [232, 122, 22],
+      "rules": [
+        {
+          "temp": "0.45..0.65"
+        },
+        {
+          "humidity": "0.5..0.7"
+        },
+        {
+          "height": "0.3..0.6"
+        }
+      ]
+    },
+    {
+      "id": 34,
+      "name": "frozen_tundra",
+      "color": [200, 230, 250],
+      "rules": [
+        {
+          "temp": "< 0.2"
+        },
+        {
+          "humidity": "0.2..0.4"
+        },
+        {
+          "height": "0.2..0.5"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "name": "mesa",
+      "color": [200, 100, 50],
+      "rules": [
+        {
+          "height": "> 0.7"
+        },
+        {
+          "temp": "> 0.6"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "name": "mountains",
+      "color": [130, 130, 130],
+      "rules": [
+        {
+          "height": "> 0.7"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "name": "tundra",
+      "color": [180, 220, 230],
+      "rules": [
+        {
+          "temp": "< 0.35"
+        },
+        {
+          "humidity": "< 0.3"
+        }
+      ]
+    },
+    {
+      "id": 128,
+      "name": "frost_land",
+      "color": [150, 250, 240],
+      "rules": [
+        {
+          "temp": "< 0.28"
+        },
+        {
+          "humidity": "> 0.72"
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "name": "boreal_forest",
+      "color": [70, 120, 100],
+      "rules": [
+        {
+          "temp": "0.35..0.4"
+        },
+        {
+          "humidity": "> 0.55"
+        },
+        {
+          "height": "> 0.4"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "name": "taiga",
+      "color": [72, 136, 153],
+      "rules": [
+        {
+          "temp": "< 0.35"
+        },
+        {
+          "humidity": "> 0.6"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "name": "desert",
+      "color": [230, 220, 130],
+      "rules": [
+        {
+          "temp": "> 0.65"
+        },
+        {
+          "humidity": "< 0.4"
+        }
+      ]
+    },
+    {
+      "id": 110001,
+      "name": "desert#oasis",
+      "base": "desert",
+      "color": [80, 200, 120],
+      "random_chance": 1.0,
+      "max_distance_from_water": 3
+    },
+    {
+      "id": 110006,
+      "name": "desert#salt_flat",
+      "base": "desert",
+      "color": [240, 240, 200],
+      "rules": [
+        {
+          "temp": ">0.5"
+        },
+        {
+          "humidity": "<0.15"
+        },
+        {
+          "height": "0.3..0.5"
+        }
+      ],
+      "random_chance": 0.2
+    },
+    {
+      "id": 13,
+      "name": "badlands",
+      "color": [150, 70, 40],
+      "rules": [
+        {
+          "temp": "> 0.7"
+        },
+        {
+          "humidity": "< 0.28"
+        }
+      ]
+    },
+    {
+      "id": 122,
+      "name": "plateau",
+      "color": [
+        220,
+        161,
+        93
+      ],
+      "rules": [
+        {
+          "temp": "> 0.65",
+          "height": "0.5..0.55"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "name": "savanna",
+      "color": [220, 190, 100],
+      "rules": [
+        {
+          "temp": "> 0.6"
+        },
+        {
+          "humidity": "0.3..0.6"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "name": "rainforest_hills",
+      "color": [20, 110, 40],
+      "rules": [
+        {
+          "temp": "> 0.57"
+        },
+        {
+          "humidity": "> 0.7"
+        },
+        {
+          "height": "> 0.6"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "name": "jungle",
+      "color": [30, 160, 50],
+      "rules": [
+        {
+          "temp": "> 0.57"
+        },
+        {
+          "humidity": "> 0.7"
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "name": "mangrove_swamp",
+      "color": [70, 90, 60],
+      "rules": [
+        {
+          "temp": "> 0.55"
+        },
+        {
+          "humidity": "> 0.6"
+        },
+        {
+          "height": "< 0.5"
+        }
+      ]
+    },
+    {
+      "id": 36,
+      "name": "mushroom_forest",
+      "color": [150, 80, 150],
+      "rules": [
+        {
+          "temp": "0.45..0.48"
+        },
+        {
+          "humidity": "0.6..0.8"
+        },
+        {
+          "height": "0.4..0.7"
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "name": "wetlands",
+      "color": [90, 130, 90],
+      "rules": [
+        {
+          "humidity": "> 0.8"
+        }
+      ]
+    },
+    {
+      "id": 170009,
+      "name": "boreal_forest#pine",
+      "base": "boreal_forest",
+      "color": [90, 110, 90],
+      "rules": [
+        {
+          "temp": "<0.45"
+        },
+        {
+          "humidity": "0.5..0.7"
+        }
+      ],
+      "random_chance": 0.25
+    },
+    {
+      "id": 18,
+      "name": "temperate_forest",
+      "color": [80, 140, 90],
+      "rules": [
+        {
+          "temp": "0.4..0.6"
+        },
+        {
+          "humidity": "> 0.5"
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "name": "hills",
+      "color": [120, 170, 100],
+      "rules": [
+        {
+          "temp": "0.4..0.6"
+        },
+        {
+          "humidity": "0.4..0.6"
+        },
+        {
+          "height": "> 0.55"
+        }
+      ]
+    },
+    {
+      "id": 200101,
+      "name": "plains#flower_field",
+      "color": [180, 255, 180],
+      "rules": [
+        {
+          "humidity": "> 0.5"
+        },
+        {
+          "temp": "0.42..0.65"
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "name": "plains#shrubland",
+      "color": [130, 180, 90],
+      "rules": [
+        {
+          "temp": "0.48..0.6"
+        },
+        {
+          "humidity": "0.3..0.42"
+        }
+      ]
+    },
+    {
+      "id": 129,
+      "name": "plains#frost",
+      "color": [124, 209, 173],
+      "rules": [
+        {
+          "temp": "< 0.28"
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "name": "plains",
+      "color": [110, 190, 90],
+      "rules": [
+        {
+          "height": "0.35..0.65"
+        }
+      ]
+    },
+    {
+      "id": 994,
+      "name": "plains#high_land",
+      "color": [158, 168, 136],
+      "rules": [
+        {
+          "height": "> 0.65"
+        }
+      ]
+    },
+    {
+      "id": 995,
+      "name": "plains#low_land",
+      "color": [121, 168, 115],
+      "rules": [
+        {
+          "height": "< 0.35"
+        }
+      ]
+    },
+    {
+      "id": 999,
+      "name": "coast",
+      "color": [240, 230, 180],
+      "rules": []
+    }
+  ]
+}
+        `;
+
+        const BIOME_DATA = JSON.parse(BIOMES_JSON_DATA);
+        const BIOME_IDS = {};
+        const BIOME_NAMES = {};
+        const BIOME_COLORS = new Map();
+        const WATER_BIOME_IDS = new Set();
+        const NO_COAST_BIOME_IDS = new Set();
+        let WATER_BIOME_IDS_WITH_COAST = new Set();
+
+        BIOME_DATA.biomes.forEach(b => {
+            BIOME_IDS[b.name] = b.id;
+            BIOME_NAMES[b.id] = b.name;
+            BIOME_COLORS.set(b.id, b.color);
+            if (b.water) {
+                WATER_BIOME_IDS.add(b.id);
+            }
+            if (b.name === "deep_ocean" || b.name === "frozen_ocean" || b.name === "swamp_ocean") {
+                NO_COAST_BIOME_IDS.add(b.id);
+            }
+        });
+
+        WATER_BIOME_IDS_WITH_COAST = new Set([...WATER_BIOME_IDS].filter(id => !NO_COAST_BIOME_IDS.has(id)));
+
+        const base_biomes = [];
+        const variant_biomes = [];
+
+        function parseCondition(expr) {
+            expr = expr.trim();
+            if (expr.includes("..")) {
+                const [lo, hi] = expr.split("..").map(Number);
+                return v => v >= lo && v <= hi;
+            } else if (expr.startsWith(">=")) {
+                const val = parseFloat(expr.substring(2));
+                return v => v >= val;
+            } else if (expr.startsWith("<=")) {
+                const val = parseFloat(expr.substring(2));
+                return v => v <= val;
+            } else if (expr.startsWith(">")) {
+                const val = parseFloat(expr.substring(1));
+                return v => v > val;
+            } else if (expr.startsWith("<")) {
+                const val = parseFloat(expr.substring(1));
+                return v => v < val;
+            } else if (expr.startsWith("==")) {
+                const val = parseFloat(expr.substring(2));
+                return v => v === val;
+            } else {
+                const val = parseFloat(expr);
+                return v => v === val;
+            }
+        }
+
+        BIOME_DATA.biomes.forEach(b => {
+            const rule_funcs = [];
+            if (b.rules) {
+                b.rules.forEach(rule => {
+                    for (const key in rule) {
+                        rule_funcs.push([key, parseCondition(rule[key])]);
+                    }
+                });
+            }
+            const record = {
+                id: b.id,
+                name: b.name,
+                rules: rule_funcs,
+                random_chance: b.random_chance || 0
+            };
+            if (b.base) {
+                record.base = b.base;
+                if (b.max_distance_from_water !== undefined) {
+                    record.max_distance_from_water = b.max_distance_from_water;
+                }
+                if (b.min_distance_from_land !== undefined) {
+                    record.min_distance_from_land = b.min_distance_from_land;
+                }
+                variant_biomes.push(record);
+            } else {
+                base_biomes.push(record);
+            }
+        });
+
+        function biome_to_color(biome_id) {
+            return BIOME_COLORS.get(biome_id) || [0, 0, 0]; // Default to black if not found
+        }
+
+        // --- Biome Generation Logic (Translated from Python) ---
+
+        function classify_biome_fast(land, temp, humidity, height) {
+            height = (land + height * 2) / 2.72;
+            land = (land * 2 + height) / 2.72;
+
+            const env = {
+                "land": land,
+                "temp": temp,
+                "humidity": humidity,
+                "height": height
+            };
+
+            for (const b of base_biomes) {
+                if (b.rules.every(([key, rule]) => rule(env[key]))) {
+                    // This random check should also use the seeded RNG
+                    // The seeded RNG instance will be passed down from generate_biome_map_fast
+                    // For now, we'll assume it's available in the scope or passed.
+                    // This function doesn't directly use Math.random(), so no change here.
+                    if (b.random_chance === 0 || Math.random() < b.random_chance) { // This still uses Math.random()
+                        return b.id;
+                    }
+                }
+            }
+            return BIOME_IDS["plains"];
+        }
+
+        // Simple Euclidean Distance Transform (approximation for this context)
+        function calculate_distance_from_land(land_map, width, height) {
+            const dist_map = Array(width).fill(0).map(() => Array(height).fill(Infinity));
+            const queue = [];
+
+            // Initialize distances for land cells
+            for (let x = 0; x < width; x++) {
+                for (let y = 0; y < height; y++) {
+                    if (land_map[x][y]) { // If it's land
+                        dist_map[x][y] = 0;
+                        queue.push({ x, y });
+                    }
+                }
+            }
+
+            let head = 0;
+            while (head < queue.length) {
+                const { x, y } = queue[head++];
+                const current_dist = dist_map[x][y];
+
+                // Neighbors
+                const neighbors = [[x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]];
+                for (const [nx, ny] of neighbors) {
+                    if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+                        if (dist_map[nx][ny] > current_dist + 1) {
+                            dist_map[nx][ny] = current_dist + 1;
+                            queue.push({ x: nx, y: ny });
+                        }
+                    }
+                }
+            }
+            return dist_map;
+        }
+
+        function is_water_within_distance(biome_map, x, y, max_dist, width, height) {
+            for (let dx = -max_dist; dx <= max_dist; dx++) {
+                for (let dy = -max_dist; dy <= max_dist; dy++) {
+                    if (dx * dx + dy * dy > max_dist * max_dist) {
+                        continue;
+                    }
+                    const nx = x + dx;
+                    const ny = y + dy;
+                    if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+                        if (WATER_BIOME_IDS.has(biome_map[nx][ny])) {
+                            return true;
+                        }
+                    }
+                }
+            }
+            return false;
+        }
+
+        // Renamed parameters for clarity:
+        // height -> height_noise_map (the noise map for height)
+        // width -> map_width (the dimension of the map)
+        // height -> map_height (the dimension of the map)
+        function apply_biome_variants(biome_map, temp_map, humidity_map, height_noise_map, land_map, variants, dist_map, map_width, map_height, rng) {
+            const new_map = biome_map.map(arr => [...arr]); // Deep copy
+
+            for (let x = 0; x < map_width; x++) {
+                for (let y = 0; y < map_height; y++) {
+                    const base_id = biome_map[x][y];
+                    const base_name = BIOME_NAMES[base_id];
+                    if (!base_name) {
+                        continue;
+                    }
+
+                    for (const var_b of variants) {
+                        if (var_b.base !== base_name) {
+                            continue;
+                        }
+
+                        const env = {
+                            "temp": temp_map[x][y],
+                            "humidity": humidity_map[x][y],
+                            "height": height_noise_map[x][y], // Correctly using the noise map
+                            "land": land_map[x][y]
+                        };
+
+                        if (!var_b.rules.every(([key, rule]) => rule(env[key]))) {
+                            continue;
+                        }
+
+                        if (var_b.max_distance_from_water !== undefined) {
+                            if (!is_water_within_distance(biome_map, x, y, var_b.max_distance_from_water, map_width, map_height)) {
+                                continue;
+                            }
+                        }
+
+                        if (var_b.min_distance_from_land !== undefined && dist_map) {
+                            if (dist_map[x][y] < var_b.min_distance_from_land) {
+                                continue;
+                            }
+                        }
+
+                        if (var_b.random_chance < 1 && rng() > var_b.random_chance) { // Use seeded RNG here
+                            continue;
+                        }
+
+                        new_map[x][y] = var_b.id;
+                        break;
+                    }
+                }
+            }
+            return new_map;
+        }
+
+        function spread_jungle_and_mangrove(biome_map, temp, humidity, height, width, height_map) {
+            const new_map = biome_map.map(arr => [...arr]);
+            const JUNGLE = BIOME_IDS["jungle"];
+            const MANGROVE_SWAMP = BIOME_IDS["mangrove_swamp"];
+
+            for (let x = 1; x < width - 1; x++) {
+                for (let y = 1; y < height_map - 1; y++) {
+                    for (let dx = -1; dx <= 1; dx++) {
+                        for (let dy = -1; dy <= 1; dy++) {
+                            if (dx === 0 && dy === 0) continue;
+                            const nx = x + dx;
+                            const ny = y + dy;
+                            const b = biome_map[nx][ny];
+                            if (b === JUNGLE || b === MANGROVE_SWAMP) {
+                                if (temp[x][y] > 0.5 && humidity[x][y] > 0.6 && height[x][y] < 0.55) {
+                                    new_map[x][y] = b;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            return new_map;
+        }
+
+        function spread_corrupted_land(biome_map, width, height_map, iterations = 4) {
+            let current_map = biome_map.map(arr => [...arr]);
+            const CORRUPTED_LAND = BIOME_IDS["corrupted_land"];
+
+            for (let iter = 0; iter < iterations; iter++) {
+                const next_map = current_map.map(arr => [...arr]);
+                for (let x = 0; x < width; x++) {
+                    for (let y = 0; y < height_map; y++) {
+                        if (current_map[x][y] === CORRUPTED_LAND) {
+                            for (let dx = -1; dx <= 1; dx++) {
+                                for (let dy = -1; dy <= 1; dy++) {
+                                    const nx = x + dx;
+                                    const ny = y + dy;
+                                    if (nx >= 0 && nx < width && ny >= 0 && ny < height_map && (dx !== 0 || dy !== 0)) {
+                                        next_map[nx][ny] = CORRUPTED_LAND;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                current_map = next_map;
+            }
+            return current_map;
+        }
+
+        function generate_biome_map_fast(land, temp, humidity, height, width, height_map, rng) {
+            const biome_map = Array(width).fill(0).map(() => Array(height_map).fill(0));
+
+            // Step 1: Base biome classification
+            for (let x = 0; x < width; x++) {
+                for (let y = 0; y < height_map; y++) {
+                    // Pass the rng to classify_biome_fast if it needs to use random_chance
+                    // For now, classify_biome_fast uses Math.random() directly, which is still a potential issue.
+                    // If classify_biome_fast also needs to use the seeded random, it needs to be passed down.
+                    // For this change, we're focusing on apply_biome_variants and future uses.
+                    biome_map[x][y] = classify_biome_fast(
+                        land[x][y], temp[x][y], humidity[x][y], height[x][y]
+                    );
+                }
+            }
+
+            // Calculate distance from land (for forbidden_island)
+            const land_bool_map = land.map(col => col.map(val => val > 0.5)); // Assuming land if value > 0.5
+            const dist_map = calculate_distance_from_land(land_bool_map, width, height_map);
+
+            // Step 2: Coastlines
+            const COAST = BIOME_IDS["coast"];
+            for (let x = 0; x < width; x++) {
+                for (let y = 0; y < height_map; y++) {
+                    if (WATER_BIOME_IDS.has(biome_map[x][y])) {
+                        continue;
+                    }
+
+                    let has_water_neighbor = false;
+                    for (let dx = -1; dx <= 1; dx++) {
+                        for (let dy = -1; dy <= 1; dy++) {
+                            if (dx === 0 && dy === 0) continue;
+                            const nx = x + dx;
+                            const ny = y + dy;
+                            if (nx >= 0 && nx < width && ny >= 0 && ny < height_map) {
+                                if (WATER_BIOME_IDS_WITH_COAST.has(biome_map[nx][ny])) {
+                                    has_water_neighbor = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (has_water_neighbor) break;
+                    }
+
+                    if (has_water_neighbor) {
+                        biome_map[x][y] = COAST;
+                    }
+                }
+            }
+
+            // Step 3: Spreads
+            let current_biome_map = spread_jungle_and_mangrove(biome_map, temp, humidity, height, width, height_map);
+            current_biome_map = spread_corrupted_land(current_biome_map, width, height_map);
+
+            // Step 4: Apply variants (oasis, forbidden_island, etc)
+            current_biome_map = apply_biome_variants(
+                current_biome_map, temp, humidity, height, land, // Pass the noise maps
+                variant_biomes, dist_map, width, height_map, rng // Pass the dimensions and RNG
+            );
+
+            return current_biome_map;
+        }
+
+        // --- Main Application Logic ---
+        const WIDTH = 500;
+        const HEIGHT = 250;
+
+        const canvas = document.getElementById('biomeCanvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = WIDTH;
+        canvas.height = HEIGHT;
+
+        const seedInput = document.getElementById('seedInput');
+        const regenButton = document.getElementById('regenButton');
+        const findBiomeInput = document.getElementById('findBiomeInput');
+        const findBiomeButton = document.getElementById('findBiomeButton');
+        const clearHighlightButton = document.getElementById('clearHighlightButton');
+        const infoText = document.getElementById('infoText');
+        const tooltipDiv = document.getElementById('tooltip');
+        const matchedBiomesList = document.getElementById('matchedBiomesList'); // New element
+
+        let currentSeed = parseInt(seedInput.value);
+        let maps = {};
+        let foundTiles = [];
+        let searchBiomeName = null;
+        let lastMouseTile = { x: -1, y: -1 };
+
+        // Helper for seeded random numbers (a simple implementation)
+        // This function creates and returns a seeded random number generator.
+        // It's a self-contained closure to ensure the seed is private to the generator.
+        function createSeededRandom(seedValue) {
+            let x = Math.sin(seedValue++) * 10000;
+            return function() {
+                x = Math.sin(x++) * 10000;
+                return x - Math.floor(x);
+            };
+        }
+
+
+        function generate_map(seed, scale, width, height) {
+            const perm = generate_permutation(seed);
+            const data = Array(width).fill(0).map(() => Array(height).fill(0));
+
+            for (let x = 0; x < width; x++) {
+                for (let y = 0; y < height; y++) {
+                    const nx = x / scale;
+                    const ny = y / scale;
+                    data[x][y] = octave_noise(nx, ny, perm);
+                }
+            }
+
+            // Normalize to 0-1
+            let min_val = Infinity;
+            let max_val = -Infinity;
+            for (let x = 0; x < width; x++) {
+                for (let y = 0; y < height; y++) {
+                    if (data[x][y] < min_val) min_val = data[x][y];
+                    if (data[x][y] > max_val) max_val = data[x][y];
+                }
+            }
+
+            if (max_val - min_val === 0) {
+                return Array(width).fill(0).map(() => Array(height).fill(0.5));
+            }
+
+            const normalized_data = Array(width).fill(0).map(() => Array(height).fill(0));
+            for (let x = 0; x < width; x++) {
+                for (let y = 0; y < height; y++) {
+                    normalized_data[x][y] = (data[x][y] - min_val) / (max_val - min_val);
+                }
+            }
+            return normalized_data;
+        }
+
+        function regenerate(seed) {
+            console.log(`Generating map with seed: ${seed}`);
+            // Create a single RNG instance for the entire map generation process
+            const rng = createSeededRandom(seed);
+
+            const land = generate_map(seed + 1876, 48, WIDTH, HEIGHT);
+            const temp = generate_map(seed + 2345, 64, WIDTH, HEIGHT);
+            const humidity = generate_map(seed + 3234, 64, WIDTH, HEIGHT);
+            const height = generate_map(seed + 4098, 24, WIDTH, HEIGHT);
+            // Pass the rng instance to generate_biome_map_fast
+            const biome = generate_biome_map_fast(land, temp, humidity, height, WIDTH, HEIGHT, rng);
+
+            return {
+                land: land,
+                temp: temp,
+                humidity: humidity,
+                height: height,
+                biome: biome
+            };
+        }
+
+        function drawBiomeMap(biomeMap) {
+            const imageData = ctx.createImageData(WIDTH, HEIGHT);
+            for (let x = 0; x < WIDTH; x++) {
+                for (let y = 0; y < HEIGHT; y++) {
+                    const color = biome_to_color(biomeMap[x][y]);
+                    const index = (y * WIDTH + x) * 4;
+                    imageData.data[index] = color[0];
+                    imageData.data[index + 1] = color[1];
+                    imageData.data[index + 2] = color[2];
+                    imageData.data[index + 3] = 255; // Alpha
+                }
+            }
+            ctx.putImageData(imageData, 0, 0);
+        }
+
+        function findBiomeTiles(biomeMap, targetBiomeId) {
+            const tiles = [];
+            for (let x = 0; x < WIDTH; x++) {
+                for (let y = 0; y < HEIGHT; y++) {
+                    if (biomeMap[x][y] === targetBiomeId) {
+                        tiles.push({ x, y });
+                    }
+                }
+            }
+            return tiles;
+        }
+
+        function updateInfoText() {
+            let text = `Current Seed: ${currentSeed}`;
+            if (searchBiomeName) {
+                text += ` | Searching: ${searchBiomeName}`;
+            }
+            infoText.textContent = text;
+        }
+
+        function clearMatchedBiomesList() {
+            while (matchedBiomesList.firstChild) {
+                matchedBiomesList.removeChild(matchedBiomesList.firstChild);
+            }
+        }
+
+        // Initial generation
+        maps = regenerate(currentSeed);
+        drawBiomeMap(maps.biome);
+        updateInfoText();
+
+        // Event Listeners
+        regenButton.addEventListener('click', () => {
+            const seedValue = parseInt(seedInput.value);
+            if (!isNaN(seedValue)) {
+                currentSeed = seedValue;
+                maps = regenerate(currentSeed);
+                drawBiomeMap(maps.biome);
+                foundTiles = []; // Clear search results on regen
+                searchBiomeName = null;
+                updateInfoText();
+                clearMatchedBiomesList(); // Clear the list on regenerate
+            } else {
+                console.warn("Invalid seed. Please enter an integer.");
+            }
+        });
+
+        findBiomeButton.addEventListener('click', () => {
+            const inputName = findBiomeInput.value.toLowerCase();
+            const matched = Object.entries(BIOME_NAMES)
+                                .filter(([, name]) => name.toLowerCase().includes(inputName))
+                                .map(([id, name]) => ({ id: parseInt(id), name }));
+
+            clearMatchedBiomesList(); // Always clear previous list on new search
+
+            if (matched.length === 1) {
+                const { id, name } = matched[0];
+                searchBiomeName = name;
+                foundTiles = findBiomeTiles(maps.biome, id);
+                console.log(`Found ${foundTiles.length} tiles for biome: ${name}`);
+            } else if (matched.length > 1) {
+                searchBiomeName = null; // Clear current search highlight
+                foundTiles = []; // Clear current highlights
+
+                matched.forEach(biome => {
+                    const button = document.createElement('button');
+                    button.textContent = biome.name;
+                    button.classList.add('btn-blue'); // Use a suitable button style
+                    button.addEventListener('click', () => {
+                        searchBiomeName = biome.name;
+                        foundTiles = findBiomeTiles(maps.biome, biome.id);
+                        updateInfoText();
+                        clearMatchedBiomesList(); // Clear the list after selection
+                    });
+                    matchedBiomesList.appendChild(button);
+                });
+                infoText.textContent = `Multiple matches found. Select from the list below:`;
+            } else {
+                searchBiomeName = null;
+                foundTiles = [];
+                infoText.textContent = "Biome not found.";
+            }
+            updateInfoText();
+        });
+
+        clearHighlightButton.addEventListener('click', () => {
+            foundTiles = [];
+            searchBiomeName = null;
+            updateInfoText();
+            drawBiomeMap(maps.biome); // Redraw to clear highlights
+            clearMatchedBiomesList(); // Clear the list on clear highlight
+        });
+
+        canvas.addEventListener('mousemove', (event) => {
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+
+            const x = Math.floor((event.clientX - rect.left) * scaleX);
+            const y = Math.floor((event.clientY - rect.top) * scaleY);
+
+            if (x >= 0 && x < WIDTH && y >= 0 && y < HEIGHT) {
+                if (x !== lastMouseTile.x || y !== lastMouseTile.y) {
+                    lastMouseTile = { x, y };
+
+                    const biomeId = maps.biome[x][y];
+                    const biomeName = BIOME_NAMES[biomeId] || "unknown";
+                    const tempVal = maps.temp[x][y];
+                    const humidVal = maps.humidity[x][y];
+                    const heightVal = maps.height[x][y];
+
+                    const infoText = `${biomeName} | T:${tempVal.toFixed(2)} H:${humidVal.toFixed(2)} Z:${heightVal.toFixed(2)}`;
+                    tooltipDiv.textContent = infoText;
+                    tooltipDiv.classList.remove('hidden');
+
+                    // Position tooltip
+                    tooltipDiv.style.left = `${event.clientX + 10}px`;
+                    tooltipDiv.style.top = `${event.clientY + 10}px`;
+
+                    // Adjust position if it goes off screen
+                    const tooltipRect = tooltipDiv.getBoundingClientRect();
+                    if (tooltipRect.right > window.innerWidth) {
+                        tooltipDiv.style.left = `${event.clientX - tooltipRect.width - 10}px`;
+                    }
+                    if (tooltipRect.bottom > window.innerHeight) {
+                        tooltipDiv.style.top = `${event.clientY - tooltipRect.height - 10}px`;
+                    }
+                }
+            } else {
+                tooltipDiv.classList.add('hidden');
+                lastMouseTile = { x: -1, y: -1 };
+            }
+        });
+
+        canvas.addEventListener('mouseleave', () => {
+            tooltipDiv.classList.add('hidden');
+            lastMouseTile = { x: -1, y: -1 };
+        });
+
+        // Animation loop for highlights
+        let lastHighlightTime = 0;
+        function animate(currentTime) {
+            if (!lastHighlightTime) lastHighlightTime = currentTime;
+            const deltaTime = currentTime - lastHighlightTime;
+
+            if (foundTiles.length > 0) {
+                // Redraw the base map first to clear previous highlights
+                drawBiomeMap(maps.biome);
+
+                // Smooth glowing white highlight on found biome tiles
+                const alpha = Math.floor((Math.sin(currentTime / 200) + 1) / 2 * 180 + 75); // range: 75-255
+
+                ctx.fillStyle = `rgba(255, 255, 255, ${alpha / 255})`;
+                for (const { x, y } of foundTiles) {
+                    ctx.fillRect(x, y, 1, 1);
+                }
+            } else {
+                // If no tiles are highlighted, ensure the map is drawn without highlights
+                drawBiomeMap(maps.biome);
+            }
+            lastHighlightTime = currentTime;
+            requestAnimationFrame(animate);
+        }
+
+        // Start the animation loop
+        requestAnimationFrame(animate);
+
+    </script>
+</body>
+</html>
